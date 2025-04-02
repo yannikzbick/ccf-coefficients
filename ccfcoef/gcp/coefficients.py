@@ -51,7 +51,7 @@ class GCPCoefficients(Coefficients):
 
         return embodied_mean
 
-    def add_cpu_power(self, name, power):
+    def add_cpu_power(self, arch, power):
         """
         Add CPU for GCP differs from Azure and AWS because Max Watts is adjusted for GCP
         
@@ -60,7 +60,7 @@ class GCPCoefficients(Coefficients):
 
         """
         self._cpus_power.append(
-            cpu_power(name, power.min_watts, power.max_watts_gcp_adjusted, power.gb_chip)
+            cpu_power(arch, power.min_watts, power.max_watts_gcp_adjusted, power.gb_chip)
         )
 
     @staticmethod

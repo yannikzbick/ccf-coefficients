@@ -1,3 +1,8 @@
+import os
+
+from click import secho
+
+
 class CPUInfo:
     def __init__(self, cpus):
         self.cpus = cpus
@@ -8,6 +13,9 @@ class CPUInfo:
 
     @staticmethod
     def instantiate(file):
+        if not os.path.exists(file):
+            print(f"Could not find file '{file}, skipping.'")
+            return None
         with open(file, 'r') as f:
             cpus = [line.strip() for line in f.readlines()]
             return CPUInfo(cpus)

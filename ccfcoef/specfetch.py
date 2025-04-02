@@ -1,12 +1,14 @@
 import io
 import re
-
 import pandas as pd
 import requests
+from pathlib import Path
 
 # Search parameters are at the end of this file.
 SPEC_FETCH_SEARCH_URL = 'https://www.spec.org/cgi-bin/osgresults?'
-
+PROJECT_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = PROJECT_DIR.joinpath('data')
+OUTPUT_DIR = PROJECT_DIR.joinpath('output')
 
 def compose_url():
     parameters = '&'.join(SPEC_FETCH_PARAMS.split('\n')[1:-1])
@@ -18,7 +20,6 @@ def fetch_spec_results():
     if result.status_code != 200:
         raise ValueError(f'Failed to fetch spec results {result.status_code}')
     return io.BytesIO(result.content)
-
 
 def spec_results():
     df = pd.read_csv(fetch_spec_results())
@@ -47,6 +48,9 @@ def spec_results():
     # represented by a '0' in the 'Result' column
     df = df[df['Result'] != 0]
 
+    # Remove rows with memory value NaN
+    df = df.dropna(subset=['Total Memory (GB)'])
+
     # Memory information comes with some HTML links, remove them
     df['Total Memory (GB)'] = df['Total Memory (GB)'].str.extract(r'(\d+)').astype(int)
 
@@ -67,7 +71,6 @@ def spec_results():
     df['CPU Description'] = df['CPU Description'].apply(clean_server_data)
 
     return df
-
 
 def clean_server_data(cpu_desc):
     # Remove text following '@'

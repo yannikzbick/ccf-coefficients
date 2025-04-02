@@ -1,6 +1,7 @@
 import inspect
 from datetime import datetime
 from pathlib import Path
+from ccfcoef import boavizta
 
 import click
 import pandas as pd
@@ -9,9 +10,10 @@ import ccfcoef.constants as const
 from ccfcoef import specfetch
 from ccfcoef.aws.coefficients import AWSCoefficients
 from ccfcoef.azure.coefficients import AzureCoefficients
+from ccfcoef.boavizta import Provider, CloudProviderInstanceTypeField
 from ccfcoef.cpu_info import CPUInfo
 from ccfcoef.cpu_power import CPUPower
-from ccfcoef.family import Family
+from ccfcoef.family import CPU_FAMILIES
 from ccfcoef.gcp.coefficients import GCPCoefficients
 from ccfcoef.specpower import SPECPower
 
@@ -19,20 +21,6 @@ PROJECT_DIR = Path(__file__).resolve().parent.parent
 DATA_DIR = PROJECT_DIR.joinpath('data')
 OUTPUT_DIR = PROJECT_DIR.joinpath('output')
 
-CPU_FAMILIES = [
-    Family(name='EPYC 1st Gen', short='amd-epyc-gen1'),
-    Family(name='EPYC 2nd Gen', short='amd-epyc-gen2'),
-    Family(name='EPYC 3rd Gen', short='amd-epyc-gen3'),
-    Family(name='Neoverse N1', short='amd-neoverse-n1'),
-    Family(name='Sandy Bridge', short='intel-sandybridge'),
-    Family(name='Ivy Bridge', short='intel-ivybridge'),
-    Family(name='Haswell', short='intel-haswell'),
-    Family(name='Broadwell', short='intel-broadwell'),
-    Family(name='Skylake (Server)', short='intel-skylake-server'),
-    Family(name='Skylake (Client)', short='intel-skylake-client'),
-    Family(name='Cascade Lake', short='intel-cascadelake'),
-    Family(name='Coffee Lake', short='intel-coffeelake'),
-    Family(name='Ice Lake', short='intel-icelake')]
 
 # default SPECpower results file, it will be overwritten by the
 # global option --spec-version or latest version if not specified
@@ -135,7 +123,6 @@ def cpu_averages(family):
         click.secho(f'\nAverages for: {name}', fg='green')
         display_cpu_power(power)
 
-
 @cli.command()
 @click.option('-w', '--write', is_flag=True, help='Write the output to a file')
 def usage_coefficients(write):
@@ -146,7 +133,6 @@ def usage_coefficients(write):
     output = {True: write_dataframes, False: display_dataframes}
 
     cpus_power = calculate_cpus_families_power(CPU_FAMILIES)
-
     click.secho('\nAzure', fg='green')
     azure = AzureCoefficients.instantiate(DATA_DIR.joinpath('azure-instances.csv'))
     coefficients = to_dataframe(azure.use_coefficients(cpus_power), sort_by='Architecture')
@@ -213,6 +199,67 @@ def update_specpower():
 
     click.secho(f'Writing {filename}', fg='white')
     results.to_csv(DATA_DIR.joinpath(filename))
+
+
+@cli.command()
+def update_cpu_models():
+    """
+    Will fetch current version of crowdsourced Boavizta CPU spec data
+    (https://github.com/Boavizta/boaviztapi/blob/main/boaviztapi/data/crowdsourcing/cpu_specs.csv)
+    and appends non existing CPU models to its corresponding {manufacturer}-{architecture}.csv file or create a new one
+    if the architecture / family does not already created.
+    """
+    click.secho("Merging Boavizta data into existing CPU data", fg='cyan')
+
+    boavizta_data = boavizta.fetch_boavizta_cpu_data()
+
+    click.secho(f'Fetched {len(boavizta_data)} CPU models from Boavizta crowdsourcing', fg='white')
+
+    architectures = boavizta.derive_architecture_from_boavizta_codename(boavizta_data)
+
+    click.secho(f"Boavizta dataset contains {len(architectures)} architectures", fg='white')
+
+    boavizta_data['architecture'] = boavizta_data['code_name'].apply(boavizta.derive_architecture_from_codename)
+
+    click.secho("Merging Boavizta data into existing CPU data", fg='cyan')
+    boavizta.append_boavizta_cpu_data(boavizta_data, architectures)
+
+    click.secho("Removing duplicate CPUs from architecture files", fg='green')
+    boavizta.remove_duplicate_cpus()
+
+
+# TODO: Docs
+@cli.command()
+@click.option('-w', '--write', is_flag=True, help='Write the output to a file.')
+def update_instances(write):
+    """
+        Fetches Boavizta instance data for AWS, GCP and Azure and uappends new instances to existing data
+        (https://github.com/Boavizta/boaviztapi/tree/main/boaviztapi/data/archetypes/cloud)
+    """
+
+    azure = boavizta.merge_boavizta_instance_and_platform(Provider.AZURE)
+
+    azure = boavizta.append_boavizta_instances(Provider.AZURE, azure, CloudProviderInstanceTypeField.AZURE)
+
+    print(azure.shape)
+
+    gcp = boavizta.merge_boavizta_instance_and_platform(Provider.GCP)
+
+    gcp = boavizta.append_boavizta_instances(Provider.GCP, gcp, CloudProviderInstanceTypeField.GCP)
+
+    print(gcp.shape)
+
+    aws = boavizta.merge_boavizta_instance_and_platform(Provider.AWS)
+
+    aws = boavizta.append_boavizta_instances(Provider.AWS, aws, CloudProviderInstanceTypeField.AWS)
+
+    print(aws.shape)
+
+    output = {True: write_dataframes, False: display_dataframes}
+
+    output[write](azure, DATA_DIR.joinpath(f"{Provider.AZURE.value}-instances.csv"))
+    output[write](gcp, DATA_DIR.joinpath(f"{Provider.GCP.value}-instances.csv"))
+    output[write](aws, DATA_DIR.joinpath(f"{Provider.AWS.value}-instances.csv"))
 
 
 @cli.command()
@@ -298,6 +345,8 @@ def calculate_cpus_families_power(families):
     cpus_power = {}
     for cpu_family in families:
         cpu_info = CPUInfo.instantiate(DATA_DIR.joinpath(f'{cpu_family.short}.csv'))
+        if not cpu_info:
+            continue
         spec_power = spec.get_cpu_power(cpu_info)
 
         cpus_power[cpu_family.name] = CPUPower(

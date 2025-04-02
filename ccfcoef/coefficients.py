@@ -14,9 +14,9 @@ class Coefficients:
         self.architectures = instances[filter_key].unique()
         self._cpus_power = []
 
-    def add_cpu_power(self, name, power: CPUPower):
+    def add_cpu_power(self, arch, power: CPUPower):
         self._cpus_power.append(
-            cpu_power(name, power.min_watts, power.max_watts, power.gb_chip)
+            cpu_power(arch, power.min_watts, power.max_watts, power.gb_chip)
         )
 
     def use_coefficients(self, power):
@@ -24,7 +24,7 @@ class Coefficients:
             if architecture in power:
                 self.add_cpu_power(architecture, power[architecture])
             else:
-                print('Missing: ' + architecture)
+                print('Missing ' + architecture)
 
         return self._cpus_power
 

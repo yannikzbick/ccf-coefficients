@@ -22,17 +22,18 @@ class AWSCoefficients(Coefficients):
 
             # This is another catch with AWS, we have the micro architecture but not the family so
             # we need to find it before asserting its power.
+            # TODO: arch initially cpu name, set to arch here
             arch = self.find_family_per_architecture(arch, power)
 
-            if arch in power:
-                self.add_cpu_power(arch, power[arch])
-            elif arch in ['Graviton', 'Graviton2']:
+            if arch in ['Graviton', 'Graviton2', 'Cortex', 'Neoverse N1']:
                 # We don't know the values for the Graviton chips so
                 # assume they are the same spec as AMD EPYC Gen 2 but listed separately
+                # TODO: Assume specs for Graviton3, 3E, 4; Graviton (Cortex) and Graviton2 (Neoverse N1) power is assumed by CCF to match EPYC 2nd Gen
                 self.add_cpu_power(arch, power['EPYC 2nd Gen'])
+            elif arch in power:
+                self.add_cpu_power(arch, power[arch])
             else:
                 print('Missing: ' + arch)
-
         return self._cpus_power
 
     def embodied_coefficients(self, cpus):
@@ -75,12 +76,12 @@ class AWSCoefficients(Coefficients):
             return 0.0
 
     @staticmethod
-    def find_family_per_architecture(arch, power):
+    def find_family_per_architecture(cpu_name, power):
         for key, value in power.items():
-            if arch in value.cpu_info.cpus:
-                arch = key
+            if cpu_name in value.cpu_info.cpus:
+                cpu_name = key
                 break
-        return arch
+        return cpu_name
 
     @staticmethod
     def instantiate(file):
